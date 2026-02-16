@@ -7,6 +7,7 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const PDF_PATH = path.resolve(process.env.PDF_PATH || './assets/document.pdf');
+const MAIL_PROVIDER = (process.env.MAIL_PROVIDER || 'smtp').toLowerCase();
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
@@ -34,6 +35,68 @@ function createTransporter() {
   });
 }
 
+function getFromEmail() {
+  if (process.env.FROM_EMAIL) {
+    return process.env.FROM_EMAIL;
+  }
+
+  if (MAIL_PROVIDER === 'smtp') {
+    return process.env.SMTP_USER;
+  }
+
+  throw new Error('FROM_EMAIL eksik. Lütfen .env dosyasını kontrol edin.');
+}
+
+async function sendWithSmtp(recipientEmail) {
+  const transporter = createTransporter();
+
+  await transporter.sendMail({
+    from: getFromEmail(),
+    to: recipientEmail,
+    subject: 'PDF Belgeniz',
+    text: 'Merhaba, talep ettiğiniz PDF ektedir.',
+    attachments: [
+      {
+        filename: path.basename(PDF_PATH),
+        path: PDF_PATH
+      }
+    ]
+  });
+}
+
+async function sendWithResend(recipientEmail) {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY eksik. Lütfen .env dosyasını kontrol edin.');
+  }
+
+  const fileContent = fs.readFileSync(PDF_PATH).toString('base64');
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      from: getFromEmail(),
+      to: [recipientEmail],
+      subject: 'PDF Belgeniz',
+      text: 'Merhaba, talep ettiğiniz PDF ektedir.',
+      attachments: [
+        {
+          filename: path.basename(PDF_PATH),
+          content: fileContent
+        }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    const responseText = await response.text();
+    throw new Error(`Resend API hatası: ${responseText}`);
+  }
+}
+
 app.post('/api/send-pdf', async (req, res) => {
   const { email } = req.body;
 
@@ -48,20 +111,11 @@ app.post('/api/send-pdf', async (req, res) => {
   }
 
   try {
-    const transporter = createTransporter();
-
-    await transporter.sendMail({
-      from: process.env.FROM_EMAIL || process.env.SMTP_USER,
-      to: email,
-      subject: 'PDF Belgeniz',
-      text: 'Merhaba, talep ettiğiniz PDF ektedir.',
-      attachments: [
-        {
-          filename: path.basename(PDF_PATH),
-          path: PDF_PATH
-        }
-      ]
-    });
+    if (MAIL_PROVIDER === 'resend') {
+      await sendWithResend(email);
+    } else {
+      await sendWithSmtp(email);
+    }
 
     return res.json({ message: 'PDF başarıyla gönderildi.' });
   } catch (error) {
