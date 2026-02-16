@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PDF Gönderimi</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>PDF Talep Formu</h1>
+      <p>PDF'i almak için e-posta adresinizi girin.</p>
+
+      <form id="mailForm">
+        <label for="email">E-posta Adresi</label>
+        <input id="email" name="email" type="email" placeholder="ornek@mail.com" required />
+        <button type="submit" id="submitBtn">PDF Gönder</button>
+      </form>
+
+      <p id="status"></p>
+    </main>
+
+    <script>
+      const form = document.getElementById('mailForm');
+      const statusEl = document.getElementById('status');
+      const submitBtn = document.getElementById('submitBtn');
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+
+        const email = document.getElementById('email').value.trim();
+        statusEl.textContent = '';
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Gönderiliyor...';
+
+        try {
+          const response = await fetch('/api/send-pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email })
+          });
+
+          const result = await response.json();
+
+          if (!response.ok) {
+            statusEl.textContent = result.message || 'Bir hata oluştu.';
+            statusEl.className = 'error';
+          } else {
+            statusEl.textContent = result.message;
+            statusEl.className = 'success';
+            form.reset();
+          }
+        } catch (error) {
+          statusEl.textContent = 'Sunucuya ulaşılamadı.';
+          statusEl.className = 'error';
+        } finally {
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'PDF Gönder';
+        }
+      });
+    </script>
+  </body>
+</html>
